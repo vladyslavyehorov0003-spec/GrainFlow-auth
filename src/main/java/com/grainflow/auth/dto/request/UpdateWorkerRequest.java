@@ -18,5 +18,7 @@ public record UpdateWorkerRequest(
         String password,
 
         @Size(min = 4, max = 6, message = "PIN must be between 4 and 6 characters")
-        String pin
+        String pin,
+
+        Boolean enabled
 ) {}

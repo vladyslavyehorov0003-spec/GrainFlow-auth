@@ -2,6 +2,7 @@ package com.grainflow.auth.controller;
 
 import com.grainflow.auth.dto.request.CreateWorkerRequest;
 import com.grainflow.auth.dto.request.UpdateWorkerRequest;
+import com.grainflow.auth.dto.request.UserFilterRequest;
 import com.grainflow.auth.dto.response.ApiResponse;
 import com.grainflow.auth.dto.response.UserResponse;
 import com.grainflow.auth.entity.User;
@@ -10,17 +11,20 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/users")
+@RequestMapping("/users")
 @RequiredArgsConstructor
 @Tag(name = "Users", description = "User management endpoints")
 public class UserController {
@@ -52,11 +56,13 @@ public class UserController {
 
     @GetMapping("/workers")
     @PreAuthorize("hasRole('MANAGER')")
-    @Operation(summary = "Get workers", description = "Returns all workers in the manager's company")
-    public ResponseEntity<ApiResponse<List<UserResponse>>> getWorkers(
+    @Operation(summary = "Get workers", description = "Returns paginated + filtered workers in the manager's company")
+    public ResponseEntity<ApiResponse<Page<UserResponse>>> getWorkers(
+            @ModelAttribute UserFilterRequest filter,
+            @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(ApiResponse.success(
-                userService.getWorkers(currentUser.getId()),
+                userService.getWorkers(currentUser.getId(), filter, pageable),
                 "Workers retrieved successfully"
         ));
     }

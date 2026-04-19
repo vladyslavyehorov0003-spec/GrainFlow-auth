@@ -35,19 +35,25 @@ public class SecurityConfig {
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/login",
-                                         "/api/v1/auth/register",
-                                         "/api/v1/auth/refresh").permitAll()
-                        .requestMatchers("/api/v1/auth/validate",
-                                         "/api/v1/auth/access").permitAll()
+                        .requestMatchers("/auth/login",
+                                         "/auth/register",
+                                         "/auth/refresh").permitAll()
+                        .requestMatchers("/auth/validate",
+                                         "/auth/access").permitAll()
                         .requestMatchers("/swagger-ui/**",
                                          "/v3/api-docs/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/error").permitAll()
                         // /me is accessible to all authenticated users regardless of role
-                        .requestMatchers(HttpMethod.GET, "/api/v1/users/me").authenticated()
-                        .requestMatchers("/api/v1/users/**").hasRole("MANAGER")
+                        .requestMatchers(HttpMethod.GET, "/users/me").authenticated()
+                        .requestMatchers("/users/**").hasRole("MANAGER")
                         .anyRequest().authenticated()
+                )
+                .exceptionHandling(ex -> ex
+                        .authenticationEntryPoint((request, response, authException) ->
+                                response.sendError(401, "Unauthorized"))
+                        .accessDeniedHandler((request, response, accessDeniedException) ->
+                                response.sendError(403, "Forbidden"))
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

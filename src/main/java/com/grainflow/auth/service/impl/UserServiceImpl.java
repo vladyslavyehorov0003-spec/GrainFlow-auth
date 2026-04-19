@@ -2,19 +2,22 @@ package com.grainflow.auth.service.impl;
 
 import com.grainflow.auth.dto.request.CreateWorkerRequest;
 import com.grainflow.auth.dto.request.UpdateWorkerRequest;
+import com.grainflow.auth.dto.request.UserFilterRequest;
 import com.grainflow.auth.dto.response.UserResponse;
 import com.grainflow.auth.entity.Role;
 import com.grainflow.auth.entity.User;
 import com.grainflow.auth.exception.AuthException;
 import com.grainflow.auth.repository.UserRepository;
+import com.grainflow.auth.repository.UserSpecification;
 import com.grainflow.auth.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -58,15 +61,13 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional(readOnly = true)
-    public List<UserResponse> getWorkers(UUID managerId) {
+    public Page<UserResponse> getWorkers(UUID managerId, UserFilterRequest filter, Pageable pageable) {
         User manager = userRepository.findById(managerId)
                 .orElseThrow(() -> AuthException.notFound("Manager not found"));
 
         return userRepository
-                .findAllByCompanyIdAndRole(manager.getCompany().getId(), Role.WORKER)
-                .stream()
-                .map(UserResponse::from)
-                .toList();
+                .findAll(UserSpecification.filter(manager.getCompany().getId(), filter), pageable)
+                .map(UserResponse::from);
     }
 
     @Override
@@ -108,6 +109,7 @@ public class UserServiceImpl implements UserService {
             }
             worker.setEmail(request.email());
         }
+        if (request.enabled() != null) worker.setEnabled(request.enabled());
         if (request.password()  != null) worker.setPassword(passwordEncoder.encode(request.password()));
         if (request.pin()       != null) worker.setPin(passwordEncoder.encode(request.pin()));
 
