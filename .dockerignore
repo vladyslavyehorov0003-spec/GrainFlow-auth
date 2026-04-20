@@ -6,5 +6,5 @@ build/
 *.log
 .env
 .env.*
+# dev properties not needed in Docker image
 src/main/resources/application-dev.properties
-src/main/resources/application-prod.properties

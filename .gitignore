@@ -20,11 +20,11 @@ out/
 *.log
 logs/
 
-# Environment / secrets
+# Environment / secrets — NEVER commit actual secret values
 .env
 .env.*
-src/main/resources/application-dev.properties
-src/main/resources/application-prod.properties
+# application-dev.properties and application-prod.properties are safe to commit
+# — they contain only ${ENV_VAR} placeholders, no real secrets
 
 # Java
 *.class

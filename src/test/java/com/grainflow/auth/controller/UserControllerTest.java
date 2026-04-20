@@ -9,14 +9,20 @@ import com.grainflow.auth.exception.AuthException;
 import com.grainflow.auth.security.CustomUserDetailsService;
 import com.grainflow.auth.service.UserService;
 import com.grainflow.auth.util.JwtUtil;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
 import java.util.List;
 
@@ -25,6 +31,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -43,6 +50,14 @@ class UserControllerTest {
     @MockitoBean private JwtUtil                 jwtUtil;
     @MockitoBean private CustomUserDetailsService userDetailsService;
 
+    @BeforeEach
+    void setUp(WebApplicationContext wac) {
+        mockMvc = MockMvcBuilders
+                .webAppContextSetup(wac)
+                .apply(springSecurity())
+                .defaultRequest(get("/").contextPath("/api/v1")) // Устанавливаем контекст по умолчанию
+                .build();
+    }
     // ── GET /me ───────────────────────────────────────────────────────────────
 
     @Test
@@ -60,9 +75,9 @@ class UserControllerTest {
     @Test
     @DisplayName("GET /me: 403 when not authenticated")
     void me_shouldReturn403_whenNotAuthenticated() throws Exception {
-        // Spring Security returns 403 by default when no AuthenticationEntryPoint is configured
+
         mockMvc.perform(get("/api/v1/users/me"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized());
     }
 
     // ── POST /workers ─────────────────────────────────────────────────────────
@@ -129,13 +144,13 @@ class UserControllerTest {
         var manager = TestFixtures.manager();
         var worker  = TestFixtures.worker();
 
-        when(userService.getWorkers(TestFixtures.MANAGER_ID))
-                .thenReturn(List.of(UserResponse.from(worker)));
+        when(userService.getWorkers(eq(TestFixtures.MANAGER_ID),any(),any()))
+                .thenReturn(new PageImpl<>(List.of(UserResponse.from(worker))));
 
         mockMvc.perform(get("/api/v1/users/workers")
                         .with(user(manager)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].email").value(worker.getEmail()));
+                .andExpect(jsonPath("$.data.content[0].email").value(worker.getEmail()));
     }
 
     // ── GET /workers/{id} ─────────────────────────────────────────────────────

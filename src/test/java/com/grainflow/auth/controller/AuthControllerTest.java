@@ -10,6 +10,7 @@ import com.grainflow.auth.exception.AuthException;
 import com.grainflow.auth.security.CustomUserDetailsService;
 import com.grainflow.auth.service.AuthService;
 import com.grainflow.auth.util.JwtUtil;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,18 +19,34 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.WebApplicationContext;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @WebMvcTest(AuthController.class)
 @Import(SecurityConfig.class)
 @DisplayName("AuthController")
 class AuthControllerTest {
 
+    @Autowired
+    private WebApplicationContext wac;
+
+    @BeforeEach
+    void setUp(WebApplicationContext wac) {
+        mockMvc = MockMvcBuilders
+                .webAppContextSetup(wac)
+                .apply(springSecurity())
+                .defaultRequest(get("/").contextPath("/api/v1")) // Устанавливаем контекст по умолчанию
+                .build();
+    }
     @Autowired private MockMvc mockMvc;
 
     // JavaTimeModule required for LocalDateTime serialization in UserResponse

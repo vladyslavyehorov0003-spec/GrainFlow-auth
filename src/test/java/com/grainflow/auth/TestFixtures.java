@@ -96,6 +96,10 @@ public final class TestFixtures {
         return new LoginRequest("alice@grainflow.com", "password123");
     }
 
+    public static UserFilterRequest  userFilterRequest() {
+        return new  UserFilterRequest(null,null);
+    }
+
     public static CreateWorkerRequest createWorkerRequest() {
         return new CreateWorkerRequest(
                 "Bob",
@@ -107,7 +111,7 @@ public final class TestFixtures {
     }
 
     public static UpdateWorkerRequest updateWorkerRequest() {
-        return new UpdateWorkerRequest("Robert", null, null, null, null);
+        return new UpdateWorkerRequest("Robert", null, null, null, null,null);
     }
 
     public static RefreshTokenRequest refreshTokenRequest() {
