@@ -1,0 +1,1 @@
+ALTER TABLE companies ADD COLUMN subscription_status VARCHAR(16) NOT NULL DEFAULT 'INACTIVE';

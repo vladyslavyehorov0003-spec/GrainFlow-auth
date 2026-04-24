@@ -186,14 +186,15 @@ public class AuthServiceImpl implements AuthService {
     public ValidateTokenResponse validate(User currentUser) {
         // currentUser is null when JwtAuthFilter couldn't authenticate the request
         if (currentUser == null) {
-            return new ValidateTokenResponse(false, null, null, null, null);
+            return new ValidateTokenResponse(false, null, null, null, null, null);
         }
         return new ValidateTokenResponse(
                 true,
                 currentUser.getId(),
                 currentUser.getCompany().getId(),
                 currentUser.getEmail(),
-                currentUser.getRole()
+                currentUser.getRole(),
+                currentUser.getCompany().getSubscriptionStatus()
         );
     }
 

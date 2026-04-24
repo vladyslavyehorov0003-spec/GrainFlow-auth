@@ -10,5 +10,6 @@ public record ValidateTokenResponse(
         UUID userId,
         UUID companyId,
         String email,
-        Role role
+        Role role,
+        String subscriptionStatus  // ACTIVE / PAST_DUE / CANCELED / INACTIVE
 ) {}

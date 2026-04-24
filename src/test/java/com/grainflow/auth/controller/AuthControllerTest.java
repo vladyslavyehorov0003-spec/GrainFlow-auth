@@ -218,7 +218,7 @@ class AuthControllerTest {
                 manager.getId(),
                 manager.getCompany().getId(),
                 manager.getEmail(),
-                Role.MANAGER
+                Role.MANAGER,"ACTIVE"
         );
 
         when(authService.validate(any())).thenReturn(response);
@@ -235,7 +235,7 @@ class AuthControllerTest {
     @Test
     @DisplayName("GET /validate: 200 with valid=false when no token provided")
     void validate_shouldReturn200_withValidFalse_whenNoToken() throws Exception {
-        var response = new ValidateTokenResponse(false, null, null, null, null);
+        var response = new ValidateTokenResponse(false, null, null, null, null,null);
         when(authService.validate(null)).thenReturn(response);
 
         mockMvc.perform(get("/api/v1/auth/validate"))
