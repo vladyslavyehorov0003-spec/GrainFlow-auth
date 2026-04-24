@@ -230,7 +230,7 @@ class AuthServiceImplTest {
     // ── validate ──────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("validate: should return valid=true with user data when user is present")
+    @DisplayName("validate: should return valid=true with subscriptionStatus when user is present")
     void validate_shouldReturnValidResponse_whenUserPresent() {
         User manager = TestFixtures.manager();
 
@@ -241,6 +241,19 @@ class AuthServiceImplTest {
         assertThat(response.companyId()).isEqualTo(manager.getCompany().getId());
         assertThat(response.email()).isEqualTo(manager.getEmail());
         assertThat(response.role()).isEqualTo(Role.MANAGER);
+        assertThat(response.subscriptionStatus()).isEqualTo("INACTIVE");
+    }
+
+    @Test
+    @DisplayName("validate: should return ACTIVE subscriptionStatus when company has active subscription")
+    void validate_shouldReturnActiveSubscription_whenCompanyIsActive() {
+        User manager = TestFixtures.manager();
+        manager.getCompany().setSubscriptionStatus("ACTIVE");
+
+        ValidateTokenResponse response = authService.validate(manager);
+
+        assertThat(response.valid()).isTrue();
+        assertThat(response.subscriptionStatus()).isEqualTo("ACTIVE");
     }
 
     @Test
@@ -253,5 +266,6 @@ class AuthServiceImplTest {
         assertThat(response.companyId()).isNull();
         assertThat(response.email()).isNull();
         assertThat(response.role()).isNull();
+        assertThat(response.subscriptionStatus()).isNull();
     }
 }
