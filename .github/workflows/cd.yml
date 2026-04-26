@@ -64,5 +64,32 @@ jobs:
           script: |
             aws ecr get-login-password --region eu-north-1 | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
             cd /app
-            docker-compose -f docker-compose.prod.yml pull auth-service
-            docker-compose -f docker-compose.prod.yml up -d --no-deps auth-service
+
+            # Зберігаємо поточний тег на випадок rollback
+            PREVIOUS_TAG=$(cat .auth-image-tag 2>/dev/null || echo "latest")
+
+            # Деплоїмо новий образ
+            IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.prod.yml pull auth-service
+            IMAGE_TAG=${{ github.sha }} docker-compose -f docker-compose.prod.yml up -d --no-deps auth-service
+
+            # Health check: 10 спроб по 15 секунд = 2.5 хвилини
+            HEALTHY=false
+            for i in $(seq 1 10); do
+              sleep 15
+              if curl -sf http://localhost:8081/api/v1/actuator/health > /dev/null 2>&1; then
+                echo "Health check passed (attempt $i)"
+                HEALTHY=true
+                break
+              fi
+              echo "Attempt $i/10 failed, retrying..."
+            done
+
+            if [ "$HEALTHY" = "true" ]; then
+              echo "${{ github.sha }}" > .auth-image-tag
+              echo "Deploy successful"
+            else
+              echo "Health check failed, rolling back to $PREVIOUS_TAG..."
+              IMAGE_TAG=$PREVIOUS_TAG docker-compose -f docker-compose.prod.yml pull auth-service
+              IMAGE_TAG=$PREVIOUS_TAG docker-compose -f docker-compose.prod.yml up -d --no-deps auth-service
+              exit 1
+            fi
