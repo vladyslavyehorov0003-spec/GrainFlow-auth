@@ -76,7 +76,7 @@ jobs:
             HEALTHY=false
             for i in $(seq 1 10); do
               sleep 15
-              if curl -sf http://localhost:8081/api/v1/actuator/health > /dev/null 2>&1; then
+              if docker inspect grainflow-auth --format='{{.State.Health.Status}}' | grep -q "healthy"; then
                 echo "Health check passed (attempt $i)"
                 HEALTHY=true
                 break
