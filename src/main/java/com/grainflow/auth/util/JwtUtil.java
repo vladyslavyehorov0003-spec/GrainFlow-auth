@@ -44,7 +44,11 @@ public class JwtUtil {
     }
 
     public String generateRefreshToken(UUID userId) {
+        // jti = random UUID — without it two refresh tokens generated in the same
+        // second for the same user would be byte-identical (iat is stored as seconds
+        // in JWT spec) and hit the refresh_tokens.token unique constraint.
         return Jwts.builder()
+                .id(UUID.randomUUID().toString())
                 .subject(userId.toString())
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + refreshTokenExpiration))
