@@ -6,6 +6,7 @@ import com.grainflow.auth.dto.response.AuthResponse;
 import com.grainflow.auth.dto.response.ValidateTokenResponse;
 import com.grainflow.auth.entity.User;
 import com.grainflow.auth.service.AuthService;
+import io.swagger.v3.oas.annotations.Hidden;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -58,6 +59,7 @@ public class AuthController {
 
     // Terminal login via employeeId + PIN — reserved for physical terminals at zone entrances
     @PostMapping("/terminal-login")
+    @Hidden
     @Operation(summary = "Terminal login", description = "Authenticate via employeeId and PIN on a physical terminal")
     public ResponseEntity<ApiResponse<AuthResponse>> terminalLogin(@Valid @RequestBody WorkerLoginRequest request) {
         return ResponseEntity.ok(ApiResponse.success(authService.terminalLogin(request), "Terminal login successful"));
