@@ -17,6 +17,7 @@ public record UserResponse(
         UUID companyId,
         String companyName,
         boolean enabled,
+        boolean companyVerified,
         LocalDateTime createdAt
 ) {
     // Maps a User entity to a safe response DTO
@@ -31,6 +32,7 @@ public record UserResponse(
                 user.getCompany().getId(),
                 user.getCompany().getName(),
                 user.isEnabled(),
+                "VERIFIED".equals(user.getCompany().getVerificationStatus()),
                 user.getCreatedAt()
         );
     }
