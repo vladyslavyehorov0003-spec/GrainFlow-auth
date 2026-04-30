@@ -11,5 +11,6 @@ public record ValidateTokenResponse(
         UUID companyId,
         String email,
         Role role,
-        String subscriptionStatus  // ACTIVE / PAST_DUE / CANCELED / INACTIVE
+        String subscriptionStatus,   // ACTIVE / PAST_DUE / CANCELED / INACTIVE
+        boolean companyVerified      // false = company hasn't verified email yet
 ) {}

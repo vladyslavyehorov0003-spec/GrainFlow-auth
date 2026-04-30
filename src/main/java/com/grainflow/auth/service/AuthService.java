@@ -7,7 +7,7 @@ import com.grainflow.auth.entity.User;
 
 public interface AuthService {
 
-    // Register a new manager and create their company
+    // Register a new manager and create their company — sends verification email, returns tokens for immediate login
     AuthResponse register(RegisterRequest request);
 
     // Login via email + password — managers (browser) and workers (mobile phone)
@@ -25,4 +25,10 @@ public interface AuthService {
     // Build a ValidateTokenResponse from the already-authenticated principal.
     // JwtAuthFilter handles token verification — this just shapes the response.
     ValidateTokenResponse validate(User currentUser);
+
+    // Verify email with the token sent after registration
+    AuthResponse verifyEmail(String token);
+
+    // Resend verification email to the given address
+    void resendVerification(String email);
 }

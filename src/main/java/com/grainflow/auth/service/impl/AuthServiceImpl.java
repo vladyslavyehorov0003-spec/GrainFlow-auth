@@ -13,6 +13,7 @@ import com.grainflow.auth.repository.CompanyRepository;
 import com.grainflow.auth.repository.RefreshTokenRepository;
 import com.grainflow.auth.repository.UserRepository;
 import com.grainflow.auth.service.AuthService;
+import com.grainflow.auth.service.EmailService;
 import com.grainflow.auth.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +26,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
 
 @Slf4j
@@ -40,9 +40,13 @@ public class AuthServiceImpl implements AuthService {
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
+    private final EmailService emailService;
 
     @Value("${jwt.refresh-token-expiration}")
     private long refreshTokenExpiration;
+
+    @Value("${app.verification-token-expiry-hours}")
+    private int verificationTokenExpiryHours;
 
 
     // Explicit transaction — if company is saved but user creation fails,
@@ -67,6 +71,12 @@ public class AuthServiceImpl implements AuthService {
                 .phone(request.company().phone())
                 .build());
 
+        String verificationToken = UUID.randomUUID().toString();
+        company.setVerificationToken(verificationToken);
+        company.setVerificationTokenExpiry(LocalDateTime.now().plusHours(verificationTokenExpiryHours));
+        company.setVerificationStatus("UNVERIFIED");
+        companyRepository.save(company);
+
         // Create the manager — first user of the company
         // If this fails, the company save above will also be rolled back
         User manager = userRepository.save(User.builder()
@@ -81,6 +91,8 @@ public class AuthServiceImpl implements AuthService {
                 .build());
 
         log.info("Manager registered: {} for company: {}", manager.getEmail(), company.getName());
+
+        emailService.sendVerificationEmail(manager.getEmail(), verificationToken);
 
         return buildAuthResponse(manager);
     }
@@ -110,6 +122,57 @@ public class AuthServiceImpl implements AuthService {
     }
 
 
+
+    @Override
+    @Transactional
+    public AuthResponse verifyEmail(String token) {
+        Company company = companyRepository.findByVerificationToken(token)
+                .orElseThrow(() -> AuthException.badRequest("Invalid or expired verification link"));
+
+        if ("VERIFIED".equals(company.getVerificationStatus())) {
+            throw AuthException.conflict("Company is already verified");
+        }
+
+        if (company.getVerificationTokenExpiry() == null ||
+                LocalDateTime.now().isAfter(company.getVerificationTokenExpiry())) {
+            throw AuthException.badRequest("Verification link has expired. Please request a new one.");
+        }
+
+        company.setVerificationStatus("VERIFIED");
+        company.setVerificationToken(null);
+        company.setVerificationTokenExpiry(null);
+        companyRepository.save(company);
+
+        log.info("Company verified: {}", company.getName());
+
+        // Return tokens for the manager so they're logged in immediately after verification
+        User manager = userRepository.findAllByCompanyIdAndRole(company.getId(), Role.MANAGER)
+                .stream().findFirst()
+                .orElseThrow(() -> AuthException.notFound("Manager not found for company"));
+
+        return buildAuthResponse(manager);
+    }
+
+    @Override
+    @Transactional
+    public void resendVerification(String email) {
+        User manager = userRepository.findByEmail(email)
+                .orElseThrow(() -> AuthException.notFound("User not found"));
+
+        Company company = manager.getCompany();
+
+        if ("VERIFIED".equals(company.getVerificationStatus())) {
+            throw AuthException.conflict("Company is already verified");
+        }
+
+        String newToken = UUID.randomUUID().toString();
+        company.setVerificationToken(newToken);
+        company.setVerificationTokenExpiry(LocalDateTime.now().plusHours(verificationTokenExpiryHours));
+        companyRepository.save(company);
+
+        emailService.sendVerificationEmail(manager.getEmail(), newToken);
+        log.info("Verification email resent to manager: {} for company: {}", manager.getEmail(), company.getName());
+    }
 
     @Override
     public AuthResponse terminalLogin(WorkerLoginRequest request) {
@@ -186,7 +249,7 @@ public class AuthServiceImpl implements AuthService {
     public ValidateTokenResponse validate(User currentUser) {
         // currentUser is null when JwtAuthFilter couldn't authenticate the request
         if (currentUser == null) {
-            return new ValidateTokenResponse(false, null, null, null, null, null);
+            return new ValidateTokenResponse(false, null, null, null, null, null, false);
         }
         return new ValidateTokenResponse(
                 true,
@@ -194,7 +257,8 @@ public class AuthServiceImpl implements AuthService {
                 currentUser.getCompany().getId(),
                 currentUser.getEmail(),
                 currentUser.getRole(),
-                currentUser.getCompany().getSubscriptionStatus()
+                currentUser.getCompany().getSubscriptionStatus(),
+                "VERIFIED".equals(currentUser.getCompany().getVerificationStatus())
         );
     }
 

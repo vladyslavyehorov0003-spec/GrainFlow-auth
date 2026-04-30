@@ -44,14 +44,16 @@ class AuthServiceImplTest {
     @Mock private JwtUtil                 jwtUtil;
     @Mock private PasswordEncoder         passwordEncoder;
     @Mock private AuthenticationManager   authenticationManager;
+    @Mock private EmailService            emailService;
 
     @InjectMocks
     private AuthServiceImpl authService;
 
     @BeforeEach
     void setUp() {
-        // Inject @Value field that Mockito cannot inject automatically
+        // Inject @Value fields that Mockito cannot inject automatically
         ReflectionTestUtils.setField(authService, "refreshTokenExpiration", 604_800_000L);
+        ReflectionTestUtils.setField(authService, "verificationTokenExpiryHours", 24);
     }
 
     // ── register ──────────────────────────────────────────────────────────────
@@ -78,7 +80,7 @@ class AuthServiceImplTest {
         assertThat(response.accessToken()).isEqualTo("access-token");
         assertThat(response.refreshToken()).isEqualTo("refresh-token");
         assertThat(response.user().email()).isEqualTo(manager.getEmail());
-        verify(companyRepository).save(any(Company.class));
+        verify(companyRepository, times(2)).save(any(Company.class));
         verify(userRepository).save(any(User.class));
     }
 

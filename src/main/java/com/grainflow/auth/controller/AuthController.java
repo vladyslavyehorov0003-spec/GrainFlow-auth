@@ -23,14 +23,14 @@ public class AuthController {
 
     private final AuthService authService;
 
-    // Register a new manager with company details
+    // Register a new manager — sends verification email, no tokens returned yet
     @PostMapping("/register")
-    @Operation(summary = "Register manager", description = "Creates a new manager account and a company")
+    @Operation(summary = "Register manager", description = "Creates a new manager account and sends a verification email")
     public ResponseEntity<ApiResponse<AuthResponse>> register(@Valid @RequestBody RegisterRequest request) {
-        AuthResponse response = authService.register(request);
+        AuthResponse authResponse = authService.register(request);
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(ApiResponse.success(response, "Manager registered successfully"));
+                .body(ApiResponse.success(authResponse, "Registration successful. Please check your email to verify your account."));
     }
 
     // Login via email + password — managers (browser) and workers (mobile phone)
@@ -38,6 +38,22 @@ public class AuthController {
     @Operation(summary = "Login", description = "Authenticate via email and password — managers and workers")
     public ResponseEntity<ApiResponse<AuthResponse>> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(ApiResponse.success(authService.login(request), "Login successful"));
+    }
+
+    // Verify email using the token from the verification email link
+    @PostMapping("/verify")
+    @Operation(summary = "Verify email", description = "Verify email address using the token sent after registration")
+    public ResponseEntity<ApiResponse<AuthResponse>> verifyEmail(@RequestParam String token) {
+        AuthResponse response = authService.verifyEmail(token);
+        return ResponseEntity.ok(ApiResponse.success(response, "Email verified successfully"));
+    }
+
+    // Resend verification email
+    @PostMapping("/resend-verification")
+    @Operation(summary = "Resend verification email", description = "Send a new verification email to the given address")
+    public ResponseEntity<ApiResponse<Void>> resendVerification(@RequestBody ResendVerificationRequest request) {
+        authService.resendVerification(request.email());
+        return ResponseEntity.ok(ApiResponse.success(null, "Verification email sent"));
     }
 
     // Terminal login via employeeId + PIN — reserved for physical terminals at zone entrances
@@ -62,9 +78,7 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(null, "Logged out successfully"));
     }
 
-    // Internal endpoint — used by other microservices to validate a JWT token.
-    // JwtAuthFilter already verified the signature and loaded the user into the SecurityContext.
-    // If the token was invalid or missing, the filter leaves the principal null — we return valid=false.
+    // Internal endpoint — used by other microservices to validate a JWT token
     @GetMapping("/validate")
     @Operation(summary = "Validate token", description = "Used by other microservices to verify token validity")
     public ResponseEntity<ApiResponse<ValidateTokenResponse>> validate(
