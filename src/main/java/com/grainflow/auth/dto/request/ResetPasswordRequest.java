@@ -3,12 +3,12 @@ package com.grainflow.auth.dto.request;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-public record ChangePasswordRequest(
+public record ResetPasswordRequest(
 
-        @NotBlank(message = "Current password is required")
-        String currentPassword,
+        @NotBlank(message = "Token is required")
+        String token,
 
         @NotBlank(message = "New password is required")
-        @Size(min = 8, message = "New password must be at least 8 characters")
+        @Size(min = 8, message = "Password must be at least 8 characters")
         String newPassword
 ) {}

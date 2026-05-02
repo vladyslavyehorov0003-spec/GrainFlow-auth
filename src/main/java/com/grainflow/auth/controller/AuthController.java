@@ -57,6 +57,28 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(null, "Verification email sent"));
     }
 
+    // Forgot password — always returns 200, even if the email is unknown,
+    // so attackers can't enumerate registered emails.
+    @PostMapping("/forgot-password")
+    @Operation(summary = "Forgot password",
+               description = "Sends a one-time reset link to the given email if the account exists. " +
+                             "Always returns 200 regardless — never reveals whether the email is registered.")
+    public ResponseEntity<ApiResponse<Void>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        authService.forgotPassword(request);
+        return ResponseEntity.ok(ApiResponse.success(null,
+                "If an account exists for that email, a reset link has been sent."));
+    }
+
+    // Reset password — completes the flow with the token from the email and a new password.
+    @PostMapping("/reset-password")
+    @Operation(summary = "Reset password",
+               description = "Completes the forgot-password flow: validates the one-time token, " +
+                             "applies the new password, and revokes every existing session.")
+    public ResponseEntity<ApiResponse<Void>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        authService.resetPassword(request);
+        return ResponseEntity.ok(ApiResponse.success(null, "Password has been reset. Please log in with the new password."));
+    }
+
     // Terminal login via employeeId + PIN — reserved for physical terminals at zone entrances
     @PostMapping("/terminal-login")
     @Hidden

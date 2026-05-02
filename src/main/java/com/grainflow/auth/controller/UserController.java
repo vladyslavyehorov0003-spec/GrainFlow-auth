@@ -1,9 +1,14 @@
 package com.grainflow.auth.controller;
 
+import com.grainflow.auth.dto.request.ChangePasswordRequest;
+import com.grainflow.auth.dto.request.ConfirmEmailChangeRequest;
 import com.grainflow.auth.dto.request.CreateWorkerRequest;
+import com.grainflow.auth.dto.request.RequestEmailChangeRequest;
 import com.grainflow.auth.dto.request.UpdateWorkerRequest;
 import com.grainflow.auth.dto.request.UserFilterRequest;
 import com.grainflow.auth.dto.response.ApiResponse;
+import com.grainflow.auth.dto.response.AuthResponse;
+import com.grainflow.auth.dto.response.RequestEmailChangeResponse;
 import com.grainflow.auth.dto.response.UserResponse;
 import com.grainflow.auth.entity.User;
 import com.grainflow.auth.service.UserService;
@@ -36,6 +41,49 @@ public class UserController {
     @Operation(summary = "Get current user", description = "Returns profile of the authenticated user")
     public ResponseEntity<ApiResponse<UserResponse>> me(@AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(ApiResponse.success(UserResponse.from(currentUser), "Current user retrieved"));
+    }
+    // Change own password — verifies current, sets new, returns fresh tokens.
+    // Frontend should overwrite the stored access + refresh tokens with the response.
+    @PatchMapping("/me/password")
+    @Operation(summary = "Change own password",
+               description = "Verifies the current password and sets a new one. " +
+                             "Other devices are logged out; this device receives a fresh token pair.")
+    public ResponseEntity<ApiResponse<AuthResponse>> changePassword(
+            @Valid @RequestBody ChangePasswordRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        AuthResponse tokens = userService.changePassword(currentUser.getId(), request);
+        return ResponseEntity.ok(ApiResponse.success(tokens, "Password changed successfully"));
+    }
+
+    // Step 1 — request email change.
+    // Response status="CHANGED" means email was updated immediately (UNVERIFIED company);
+    // tokens are included. status="CODE_SENT" means a 6-digit code was sent to the
+    // current email and the frontend should now show the code-input screen.
+    @PostMapping("/me/email/request-change")
+    @Operation(summary = "Request email change",
+               description = "If the company is unverified, the email is changed immediately. " +
+                             "Otherwise a 6-digit code is sent to the current email.")
+    public ResponseEntity<ApiResponse<RequestEmailChangeResponse>> requestEmailChange(
+            @Valid @RequestBody RequestEmailChangeRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        RequestEmailChangeResponse result = userService.requestEmailChange(currentUser.getId(), request);
+        String msg = "CODE_SENT".equals(result.status())
+                ? "Verification code sent to your current email"
+                : "Email changed successfully";
+        return ResponseEntity.ok(ApiResponse.success(result, msg));
+    }
+
+    // Step 2 — confirm email change with the 6-digit code.
+    // On success the email is updated, all refresh tokens are revoked, and a fresh
+    // token pair is returned for the current device.
+    @PostMapping("/me/email/confirm-change")
+    @Operation(summary = "Confirm email change",
+               description = "Confirms the pending email change with the 6-digit code from the old email.")
+    public ResponseEntity<ApiResponse<AuthResponse>> confirmEmailChange(
+            @Valid @RequestBody ConfirmEmailChangeRequest request,
+            @AuthenticationPrincipal User currentUser) {
+        AuthResponse tokens = userService.confirmEmailChange(currentUser.getId(), request);
+        return ResponseEntity.ok(ApiResponse.success(tokens, "Email changed successfully"));
     }
 
     // ── Workers ───────────────────────────────────────────────────────────────

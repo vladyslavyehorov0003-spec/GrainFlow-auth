@@ -4,6 +4,8 @@ import com.grainflow.auth.dto.request.*;
 import com.grainflow.auth.dto.response.AuthResponse;
 import com.grainflow.auth.dto.response.UserResponse;
 import com.grainflow.auth.entity.Company;
+import com.grainflow.auth.entity.EmailChangeCode;
+import com.grainflow.auth.entity.PasswordResetToken;
 import com.grainflow.auth.entity.RefreshToken;
 import com.grainflow.auth.entity.Role;
 import com.grainflow.auth.entity.User;
@@ -28,6 +30,17 @@ public final class TestFixtures {
         c.setName("GrainFlow LLC");
         c.setAddress("123 Wheat St");
         c.setPhone("+1-555-0100");
+        c.setVerificationStatus("UNVERIFIED");
+        c.setSubscriptionStatus("INACTIVE");
+        return c;
+    }
+
+    // Convenience: company that has already verified its email.
+    // The email-change flow branches on this — the VERIFIED path triggers the
+    // 2-factor (link to old + code to new) flow.
+    public static Company verifiedCompany() {
+        Company c = company();
+        c.setVerificationStatus("VERIFIED");
         return c;
     }
 
@@ -80,6 +93,32 @@ public final class TestFixtures {
                 .build();
     }
 
+    // Pending email change record — useful for confirmEmailChange tests.
+    public static EmailChangeCode emailChangeCode(UUID userId, String token,
+                                                  String hashedCode, String newEmail) {
+        return EmailChangeCode.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .token(token)
+                .codeHash(hashedCode)
+                .newEmail(newEmail)
+                .expiresAt(LocalDateTime.now().plusMinutes(60))
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
+    // One-time password reset token — useful for resetPassword tests.
+    public static PasswordResetToken passwordResetToken(UUID userId, String tokenHash) {
+        return PasswordResetToken.builder()
+                .id(UUID.randomUUID())
+                .userId(userId)
+                .tokenHash(tokenHash)
+                .expiresAt(LocalDateTime.now().plusMinutes(60))
+                .used(false)
+                .createdAt(LocalDateTime.now())
+                .build();
+    }
+
     // ── Requests ──────────────────────────────────────────────────────────────
 
     public static RegisterRequest registerRequest() {
@@ -116,6 +155,26 @@ public final class TestFixtures {
 
     public static RefreshTokenRequest refreshTokenRequest() {
         return new RefreshTokenRequest("valid-refresh-token");
+    }
+
+    public static ChangePasswordRequest changePasswordRequest() {
+        return new ChangePasswordRequest("password123", "newPassword456");
+    }
+
+    public static RequestEmailChangeRequest requestEmailChangeRequest() {
+        return new RequestEmailChangeRequest("alice.new@grainflow.com");
+    }
+
+    public static ConfirmEmailChangeRequest confirmEmailChangeRequest() {
+        return new ConfirmEmailChangeRequest("token-from-link", "123456");
+    }
+
+    public static ForgotPasswordRequest forgotPasswordRequest() {
+        return new ForgotPasswordRequest("alice@grainflow.com");
+    }
+
+    public static ResetPasswordRequest resetPasswordRequest() {
+        return new ResetPasswordRequest("reset-token", "newPassword456");
     }
 
     // ── Responses ─────────────────────────────────────────────────────────────

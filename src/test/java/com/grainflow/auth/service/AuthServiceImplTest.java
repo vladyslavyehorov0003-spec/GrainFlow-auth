@@ -1,20 +1,28 @@
 package com.grainflow.auth.service;
 
 import com.grainflow.auth.TestFixtures;
+import com.grainflow.auth.dto.request.ForgotPasswordRequest;
 import com.grainflow.auth.dto.request.LoginRequest;
 import com.grainflow.auth.dto.request.RefreshTokenRequest;
+import com.grainflow.auth.dto.request.ResetPasswordRequest;
 import com.grainflow.auth.dto.response.AuthResponse;
 import com.grainflow.auth.dto.response.ValidateTokenResponse;
 import com.grainflow.auth.entity.Company;
+import com.grainflow.auth.entity.PasswordResetToken;
 import com.grainflow.auth.entity.RefreshToken;
 import com.grainflow.auth.entity.Role;
 import com.grainflow.auth.entity.User;
 import com.grainflow.auth.exception.AuthException;
 import com.grainflow.auth.repository.CompanyRepository;
+import com.grainflow.auth.repository.PasswordResetTokenRepository;
 import com.grainflow.auth.repository.RefreshTokenRepository;
 import com.grainflow.auth.repository.UserRepository;
 import com.grainflow.auth.service.impl.AuthServiceImpl;
 import com.grainflow.auth.util.JwtUtil;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,13 +46,14 @@ import static org.mockito.Mockito.*;
 @DisplayName("AuthServiceImpl")
 class AuthServiceImplTest {
 
-    @Mock private UserRepository          userRepository;
-    @Mock private CompanyRepository       companyRepository;
-    @Mock private RefreshTokenRepository  refreshTokenRepository;
-    @Mock private JwtUtil                 jwtUtil;
-    @Mock private PasswordEncoder         passwordEncoder;
-    @Mock private AuthenticationManager   authenticationManager;
-    @Mock private EmailService            emailService;
+    @Mock private UserRepository                userRepository;
+    @Mock private CompanyRepository             companyRepository;
+    @Mock private RefreshTokenRepository        refreshTokenRepository;
+    @Mock private PasswordResetTokenRepository  passwordResetTokenRepository;
+    @Mock private JwtUtil                       jwtUtil;
+    @Mock private PasswordEncoder               passwordEncoder;
+    @Mock private AuthenticationManager         authenticationManager;
+    @Mock private EmailService                  emailService;
 
     @InjectMocks
     private AuthServiceImpl authService;
@@ -54,6 +63,16 @@ class AuthServiceImplTest {
         // Inject @Value fields that Mockito cannot inject automatically
         ReflectionTestUtils.setField(authService, "refreshTokenExpiration", 604_800_000L);
         ReflectionTestUtils.setField(authService, "verificationTokenExpiryHours", 24);
+        ReflectionTestUtils.setField(authService, "passwordResetTokenExpiryMinutes", 60);
+    }
+
+    // SHA-256 helper mirrors AuthServiceImpl.sha256() — needed to fabricate
+    // the token_hash that the service will look up for known raw tokens.
+    private static String sha256(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return HexFormat.of().formatHex(md.digest(input.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) { throw new RuntimeException(e); }
     }
 
     // ── register ──────────────────────────────────────────────────────────────
@@ -269,5 +288,136 @@ class AuthServiceImplTest {
         assertThat(response.email()).isNull();
         assertThat(response.role()).isNull();
         assertThat(response.subscriptionStatus()).isNull();
+    }
+
+    // ── forgotPassword ────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("forgotPassword: VERIFIED account — saves reset token and sends email")
+    void forgotPassword_shouldIssueTokenAndSendEmail_whenAccountVerified() {
+        var manager = TestFixtures.manager();
+        manager.setCompany(TestFixtures.verifiedCompany());
+        var request = TestFixtures.forgotPasswordRequest();
+
+        when(userRepository.findByEmail(request.email().toLowerCase())).thenReturn(Optional.of(manager));
+
+        authService.forgotPassword(request);
+
+        verify(passwordResetTokenRepository).deleteByUserId(manager.getId());
+        verify(passwordResetTokenRepository).save(any(PasswordResetToken.class));
+        verify(emailService).sendPasswordResetEmail(eq(manager.getEmail()), anyString());
+    }
+
+    @Test
+    @DisplayName("forgotPassword: unknown email — silent (no email, no DB write) — anti-enumeration")
+    void forgotPassword_shouldDoNothing_whenEmailNotFound() {
+        var request = TestFixtures.forgotPasswordRequest();
+        when(userRepository.findByEmail(any())).thenReturn(Optional.empty());
+
+        assertThatNoException().isThrownBy(() -> authService.forgotPassword(request));
+
+        verify(passwordResetTokenRepository, never()).save(any());
+        verify(emailService, never()).sendPasswordResetEmail(any(), any());
+    }
+
+    @Test
+    @DisplayName("forgotPassword: UNVERIFIED account — silent (no email, no DB write)")
+    void forgotPassword_shouldDoNothing_whenCompanyUnverified() {
+        var manager = TestFixtures.manager(); // company is UNVERIFIED by default
+        var request = TestFixtures.forgotPasswordRequest();
+
+        when(userRepository.findByEmail(any())).thenReturn(Optional.of(manager));
+
+        assertThatNoException().isThrownBy(() -> authService.forgotPassword(request));
+
+        verify(passwordResetTokenRepository, never()).save(any());
+        verify(emailService, never()).sendPasswordResetEmail(any(), any());
+    }
+
+    // ── resetPassword ─────────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("resetPassword: success — sets new password, marks token used, revokes refresh tokens")
+    void resetPassword_shouldUpdatePasswordAndRevokeSessions() {
+        var manager = TestFixtures.manager();
+        var rawToken = "raw-token";
+        var record = TestFixtures.passwordResetToken(manager.getId(), sha256(rawToken));
+        var request = new ResetPasswordRequest(rawToken, "newPassword456");
+
+        when(passwordResetTokenRepository.findByTokenHash(record.getTokenHash())).thenReturn(Optional.of(record));
+        when(userRepository.findById(manager.getId())).thenReturn(Optional.of(manager));
+        when(passwordEncoder.matches(request.newPassword(), manager.getPassword())).thenReturn(false);
+        when(passwordEncoder.encode(request.newPassword())).thenReturn("hashed-new");
+
+        authService.resetPassword(request);
+
+        assertThat(manager.getPassword()).isEqualTo("hashed-new");
+        assertThat(record.isUsed()).isTrue();
+        verify(userRepository).save(manager);
+        verify(passwordResetTokenRepository).save(record);
+        verify(refreshTokenRepository).revokeAllByUser(manager);
+    }
+
+    @Test
+    @DisplayName("resetPassword: 400 when token is unknown")
+    void resetPassword_shouldThrowBadRequest_whenTokenNotFound() {
+        when(passwordResetTokenRepository.findByTokenHash(any())).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest("ghost", "newPassword456")))
+                .isInstanceOf(AuthException.class)
+                .extracting(e -> ((AuthException) e).getStatus().value())
+                .isEqualTo(400);
+    }
+
+    @Test
+    @DisplayName("resetPassword: 400 when token has already been used (replay attack)")
+    void resetPassword_shouldThrowBadRequest_whenTokenAlreadyUsed() {
+        var rawToken = "raw-token";
+        var record = TestFixtures.passwordResetToken(TestFixtures.MANAGER_ID, sha256(rawToken));
+        record.setUsed(true);
+
+        when(passwordResetTokenRepository.findByTokenHash(record.getTokenHash())).thenReturn(Optional.of(record));
+
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest(rawToken, "newPassword456")))
+                .isInstanceOf(AuthException.class)
+                .extracting(e -> ((AuthException) e).getStatus().value())
+                .isEqualTo(400);
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("resetPassword: 400 when token has expired")
+    void resetPassword_shouldThrowBadRequest_whenTokenExpired() {
+        var rawToken = "raw-token";
+        var record = TestFixtures.passwordResetToken(TestFixtures.MANAGER_ID, sha256(rawToken));
+        record.setExpiresAt(java.time.LocalDateTime.now().minusMinutes(1));
+
+        when(passwordResetTokenRepository.findByTokenHash(record.getTokenHash())).thenReturn(Optional.of(record));
+
+        assertThatThrownBy(() -> authService.resetPassword(new ResetPasswordRequest(rawToken, "newPassword456")))
+                .isInstanceOf(AuthException.class)
+                .extracting(e -> ((AuthException) e).getStatus().value())
+                .isEqualTo(400);
+    }
+
+    @Test
+    @DisplayName("resetPassword: 400 when new password equals current password")
+    void resetPassword_shouldThrowBadRequest_whenSamePassword() {
+        var manager = TestFixtures.manager();
+        var rawToken = "raw-token";
+        var record = TestFixtures.passwordResetToken(manager.getId(), sha256(rawToken));
+        var request = new ResetPasswordRequest(rawToken, "samePassword");
+
+        when(passwordResetTokenRepository.findByTokenHash(record.getTokenHash())).thenReturn(Optional.of(record));
+        when(userRepository.findById(manager.getId())).thenReturn(Optional.of(manager));
+        when(passwordEncoder.matches(request.newPassword(), manager.getPassword())).thenReturn(true);
+
+        assertThatThrownBy(() -> authService.resetPassword(request))
+                .isInstanceOf(AuthException.class)
+                .extracting(e -> ((AuthException) e).getStatus().value())
+                .isEqualTo(400);
+
+        verify(userRepository, never()).save(any());
     }
 }

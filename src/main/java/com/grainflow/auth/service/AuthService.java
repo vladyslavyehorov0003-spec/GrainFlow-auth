@@ -31,4 +31,18 @@ public interface AuthService {
 
     // Resend verification email to the given address
     void resendVerification(String email);
+
+    // "I forgot my password" — issue a one-time reset link to the given email
+    // if it belongs to a verified company. Always silent on failure
+    // (anti-enumeration: never reveal whether the email exists).
+    void forgotPassword(ForgotPasswordRequest request);
+
+    // Complete the reset using the token from the email + a new password.
+    // Validates token, applies password, marks token used, revokes all refresh tokens.
+    void resetPassword(ResetPasswordRequest request);
+
+    // Revoke all of this user's refresh tokens and issue a fresh access+refresh pair.
+    // Used by login/register/refresh/verify and by password change to keep the
+    // current session alive after revoking everything else.
+    AuthResponse issueTokensFor(User user);
 }

@@ -39,14 +39,19 @@ public class SecurityConfig {
                                          "/auth/register",
                                          "/auth/refresh",
                                          "/auth/verify",
-                                         "/auth/resend-verification").permitAll()
+                                         "/auth/resend-verification",
+                                         "/auth/forgot-password",
+                                         "/auth/reset-password").permitAll()
                         .requestMatchers("/auth/validate",
                                          "/auth/access").permitAll()
                         .requestMatchers("/swagger-ui/**",
                                          "/v3/api-docs/**").permitAll()
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/error").permitAll()
-                        // /me is accessible to all authenticated users regardless of role
+                        // /me/** is the user's own account — accessible to any authenticated role
+                        // (workers also need to change their own password / email).
+                        // Matched BEFORE the broader /users/** rule so it takes precedence.
+                        .requestMatchers("/users/me/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/users/me").authenticated()
                         .requestMatchers("/users/**").hasRole("MANAGER")
                         .anyRequest().authenticated()
