@@ -5,11 +5,13 @@ import com.grainflow.auth.dto.response.AuthResponse;
 import com.grainflow.auth.dto.response.UserResponse;
 import com.grainflow.auth.dto.response.ValidateTokenResponse;
 import com.grainflow.auth.entity.Company;
+import com.grainflow.auth.entity.PasswordResetToken;
 import com.grainflow.auth.entity.RefreshToken;
 import com.grainflow.auth.entity.Role;
 import com.grainflow.auth.entity.User;
 import com.grainflow.auth.exception.AuthException;
 import com.grainflow.auth.repository.CompanyRepository;
+import com.grainflow.auth.repository.PasswordResetTokenRepository;
 import com.grainflow.auth.repository.RefreshTokenRepository;
 import com.grainflow.auth.repository.UserRepository;
 import com.grainflow.auth.service.AuthService;
@@ -25,7 +27,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.UUID;
 
 @Slf4j
@@ -37,6 +43,7 @@ public class AuthServiceImpl implements AuthService {
     private final UserRepository userRepository;
     private final CompanyRepository companyRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final JwtUtil jwtUtil;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
@@ -47,6 +54,9 @@ public class AuthServiceImpl implements AuthService {
 
     @Value("${app.verification-token-expiry-hours}")
     private int verificationTokenExpiryHours;
+
+    @Value("${app.password-reset-token-expiry-minutes}")
+    private int passwordResetTokenExpiryMinutes;
 
 
     // Explicit transaction — if company is saved but user creation fails,
@@ -94,7 +104,7 @@ public class AuthServiceImpl implements AuthService {
 
         emailService.sendVerificationEmail(manager.getEmail(), verificationToken);
 
-        return buildAuthResponse(manager);
+        return issueTokensFor(manager);
     }
 
 
@@ -118,7 +128,7 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("User logged in: {}", user.getEmail());
 
-        return buildAuthResponse(user);
+        return issueTokensFor(user);
     }
 
 
@@ -150,7 +160,7 @@ public class AuthServiceImpl implements AuthService {
                 .stream().findFirst()
                 .orElseThrow(() -> AuthException.notFound("Manager not found for company"));
 
-        return buildAuthResponse(manager);
+        return issueTokensFor(manager);
     }
 
     @Override
@@ -262,10 +272,96 @@ public class AuthServiceImpl implements AuthService {
         );
     }
 
+    // ── Forgot / Reset password ───────────────────────────────────────────────
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void forgotPassword(ForgotPasswordRequest request) {
+        // ALWAYS return silently — never reveal which emails are registered.
+        // The HTTP layer always answers 200 regardless of what we do here.
+        userRepository.findByEmail(request.email().trim().toLowerCase()).ifPresent(user -> {
+
+            // Only verified accounts can reset — an unverified user just registered
+            // and presumably still remembers their password; if not, they can re-verify.
+            if (!"VERIFIED".equals(user.getCompany().getVerificationStatus())) {
+                log.info("Password reset requested for UNVERIFIED account, ignoring: {}", user.getEmail());
+                return;
+            }
+
+            String rawToken = UUID.randomUUID().toString();
+            String tokenHash = sha256(rawToken);
+
+            // Wipe any prior token for this user — only one valid link at a time.
+            passwordResetTokenRepository.deleteByUserId(user.getId());
+            passwordResetTokenRepository.save(PasswordResetToken.builder()
+                    .userId(user.getId())
+                    .tokenHash(tokenHash)
+                    .expiresAt(LocalDateTime.now().plusMinutes(passwordResetTokenExpiryMinutes))
+                    .used(false)
+                    .build());
+
+            emailService.sendPasswordResetEmail(user.getEmail(), rawToken);
+            log.info("Password reset link issued for user: {}", user.getEmail());
+        });
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void resetPassword(ResetPasswordRequest request) {
+        String tokenHash = sha256(request.token());
+
+        PasswordResetToken record = passwordResetTokenRepository.findByTokenHash(tokenHash)
+                .orElseThrow(() -> AuthException.badRequest("Invalid or expired reset link"));
+
+        if (record.isUsed()) {
+            throw AuthException.badRequest("This reset link has already been used");
+        }
+        if (LocalDateTime.now().isAfter(record.getExpiresAt())) {
+            throw AuthException.badRequest("Reset link has expired. Please request a new one.");
+        }
+
+        User user = userRepository.findById(record.getUserId())
+                .orElseThrow(() -> AuthException.notFound("User not found"));
+
+        // Don't allow resetting to the same password — pointless and prevents
+        // accidental no-ops where the user thinks something happened but nothing did.
+        if (passwordEncoder.matches(request.newPassword(), user.getPassword())) {
+            throw AuthException.badRequest("New password must be different from the current one");
+        }
+
+        user.setPassword(passwordEncoder.encode(request.newPassword()));
+        userRepository.save(user);
+
+        // Mark token used so the same link can't be replayed.
+        record.setUsed(true);
+        passwordResetTokenRepository.save(record);
+
+        // Kill every active session — if the password was reset, any old session
+        // could be an attacker who briefly had access.
+        refreshTokenRepository.revokeAllByUser(user);
+
+        log.info("Password reset completed for user: {}", user.getEmail());
+    }
+
     // ── Private helpers ───────────────────────────────────────────────────────
 
-    // Builds AuthResponse by generating tokens and persisting the refresh token
-    private AuthResponse buildAuthResponse(User user) {
+    // Deterministic hash so we can look the token up by its hash. BCrypt won't
+    // work here (each call produces a different hash for the same input).
+    private String sha256(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] hash = md.digest(input.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    // Builds AuthResponse by generating tokens and persisting the refresh token.
+    // Public + @Override because UserService also uses this on password change
+    // (current device gets fresh tokens, all other devices logged out).
+    @Override
+    public AuthResponse issueTokensFor(User user) {
         String accessToken = jwtUtil.generateAccessToken(
                 user.getId(),
                 user.getEmail(),

@@ -23,6 +23,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -242,5 +243,80 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.valid").value(false))
                 .andExpect(jsonPath("$.message").value("Token is missing or invalid"));
+    }
+
+    // ── POST /forgot-password ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /forgot-password: 200 — accessible without authentication")
+    void forgotPassword_shouldReturn200_withoutAuth() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(TestFixtures.forgotPasswordRequest())))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("POST /forgot-password: still 200 even if email does not exist (anti-enumeration)")
+    void forgotPassword_shouldReturn200_evenIfEmailUnknown() throws Exception {
+        // Service returns silently on unknown email — controller never sees an exception
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"nobody@nowhere.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("If an account exists for that email, a reset link has been sent."));
+    }
+
+    @Test
+    @DisplayName("POST /forgot-password: 400 when email is malformed")
+    void forgotPassword_shouldReturn400_whenInvalidEmail() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/forgot-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"not-an-email\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    // ── POST /reset-password ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("POST /reset-password: 200 — accessible without authentication")
+    void resetPassword_shouldReturn200_withoutAuth() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(TestFixtures.resetPasswordRequest())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message")
+                        .value("Password has been reset. Please log in with the new password."));
+    }
+
+    @Test
+    @DisplayName("POST /reset-password: 400 when token is missing")
+    void resetPassword_shouldReturn400_whenTokenMissing() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"newPassword\":\"newPassword456\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("POST /reset-password: 400 when newPassword is too short")
+    void resetPassword_shouldReturn400_whenPasswordTooShort() throws Exception {
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"token\":\"abc\",\"newPassword\":\"short\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("POST /reset-password: 400 when token is invalid/expired")
+    void resetPassword_shouldReturn400_whenTokenInvalid() throws Exception {
+        doThrow(AuthException.badRequest("Invalid or expired reset link"))
+                .when(authService).resetPassword(any());
+
+        mockMvc.perform(post("/api/v1/auth/reset-password")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(TestFixtures.resetPasswordRequest())))
+                .andExpect(status().isBadRequest());
     }
 }
