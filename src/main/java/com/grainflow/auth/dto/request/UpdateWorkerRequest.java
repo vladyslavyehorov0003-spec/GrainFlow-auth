@@ -21,4 +21,8 @@ public record UpdateWorkerRequest(
         String pin,
 
         Boolean enabled
-) {}
+) {
+    public UpdateWorkerRequest {
+        if (email != null) email = email.trim().toLowerCase();
+    }
+}

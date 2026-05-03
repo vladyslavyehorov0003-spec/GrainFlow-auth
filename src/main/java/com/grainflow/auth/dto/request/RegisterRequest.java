@@ -24,4 +24,8 @@ public record RegisterRequest(
 
         @Valid
         CompanyRequest company
-) {}
+) {
+    public RegisterRequest {
+        if (email != null) email = email.trim().toLowerCase();
+    }
+}

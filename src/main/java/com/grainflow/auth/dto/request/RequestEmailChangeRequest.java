@@ -8,4 +8,8 @@ public record RequestEmailChangeRequest(
         @NotBlank(message = "New email is required")
         @Email(message = "Invalid email format")
         String newEmail
-) {}
+) {
+    public RequestEmailChangeRequest {
+        if (newEmail != null) newEmail = newEmail.trim().toLowerCase();
+    }
+}
