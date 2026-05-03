@@ -5,4 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 
 public record ResendVerificationRequest(
         @NotBlank @Email String email
-) {}
+) {
+    public ResendVerificationRequest {
+        if (email != null) email = email.trim().toLowerCase();
+    }
+}
